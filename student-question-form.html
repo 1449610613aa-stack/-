@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>学生问题咨询</title>
+<style>
+  :root {
+    --bg: #eef2f5;
+    --card: #ffffff;
+    --ink: #1b2a38;
+    --muted: #5d6b79;
+    --line: #cfd8e0;
+    --accent: #0f5c8a;
+    --accent-dark: #0a4468;
+    --ok: #1c7a4b;
+    --err: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121a21; --card: #1b252e; --ink: #e6edf3; --muted: #9aa8b5;
+      --line: #35444f; --accent: #4aa3d8; --accent-dark: #7bbde6;
+      --ok: #55c58a; --err: #ff8a80;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+    line-height: 1.6; padding: 32px 16px;
+  }
+  main { max-width: 640px; margin: 0 auto; }
+  h1 { font-size: 26px; margin: 0 0 6px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  form {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 10px; padding: 28px;
+  }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 520px) { .row { grid-template-columns: 1fr; } form { padding: 20px; } }
+  .field { margin-bottom: 18px; }
+  label { display: block; font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+  label span { color: var(--err); margin-left: 2px; }
+  input, textarea {
+    width: 100%; font: inherit; color: var(--ink); background: transparent;
+    border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px;
+  }
+  textarea { min-height: 140px; resize: vertical; }
+  input:focus, textarea:focus, button:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent);
+  }
+  .count { text-align: right; font-size: 12px; color: var(--muted); margin-top: 4px; }
+  button {
+    width: 100%; font: inherit; font-weight: 600; color: #fff; background: var(--accent);
+    border: 0; border-radius: 6px; padding: 12px; cursor: pointer;
+  }
+  button:hover { background: var(--accent-dark); }
+  button:disabled { opacity: .6; cursor: wait; }
+  #status { margin-top: 18px; padding: 14px 16px; border-radius: 6px; display: none; white-space: pre-wrap; }
+  #status.ok { display: block; border: 1px solid var(--ok); color: var(--ok); }
+  #status.err { display: block; border: 1px solid var(--err); color: var(--err); }
+  #status h2 { font-size: 15px; margin: 0 0 4px; }
+  #status p { margin: 0; color: var(--ink); }
+</style>
+</head>
+<body>
+<main>
+  <h1>学生问题咨询</h1>
+  <p class="sub">请填写以下信息并描述你的问题，我们会尽快回复到你的邮箱。</p>
+
+  <form id="qform" novalidate>
+    <div class="row">
+      <div class="field">
+        <label for="studentId">学号<span>*</span></label>
+        <input id="studentId" name="studentId" required autocomplete="off" inputmode="numeric" placeholder="例如：2024001234">
+      </div>
+      <div class="field">
+        <label for="name">姓名<span>*</span></label>
+        <input id="name" name="name" required autocomplete="name">
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label for="major">专业<span>*</span></label>
+        <input id="major" name="major" required placeholder="例如：计算机科学与技术">
+      </div>
+      <div class="field">
+        <label for="birthday">生日<span>*</span></label>
+        <input id="birthday" name="birthday" type="date" required autocomplete="bday">
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="email">邮箱<span>*</span></label>
+      <input id="email" name="email" type="email" required autocomplete="email" placeholder="name@example.com">
+    </div>
+
+    <div class="field">
+      <label for="question">问题<span>*</span></label>
+      <textarea id="question" name="question" required maxlength="2000" placeholder="请尽量详细描述你遇到的问题"></textarea>
+      <div class="count"><span id="n">0</span> / 2000</div>
+    </div>
+
+    <button type="submit" id="btn">提交问题</button>
+    <div id="status" role="status" aria-live="polite"></div>
+  </form>
+</main>
+
+<script>
+  // ===== 配置：把下面的地址换成 n8n Webhook 节点的 URL =====
+  // 测试时用 Test URL（…/webhook-test/xxx），上线后换成 Production URL（…/webhook/xxx）
+  const WEBHOOK_URL = "https://your-n8n-domain.com/webhook/student-question";
+
+  const form = document.getElementById("qform");
+  const btn = document.getElementById("btn");
+  const box = document.getElementById("status");
+  const q = document.getElementById("question");
+
+  q.addEventListener("input", () => { document.getElementById("n").textContent = q.value.length; });
+
+  function show(type, title, text) {
+    box.className = type;
+    box.innerHTML = "";
+    const h = document.createElement("h2"); h.textContent = title;
+    box.appendChild(h);
+    if (text) { const p = document.createElement("p"); p.textContent = text; box.appendChild(p); }
+  }
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    box.className = "";
+
+    const data = {
+      studentId: form.studentId.value.trim(),
+      name: form.name.value.trim(),
+      major: form.major.value.trim(),
+      birthday: form.birthday.value,
+      email: form.email.value.trim(),
+      question: form.question.value.trim(),
+      submittedAt: new Date().toISOString()
+    };
+
+    if (Object.values(data).some(v => !v)) {
+      show("err", "信息不完整", "所有带 * 的项目都必须填写。");
+      return;
+    }
+    if (!form.email.checkValidity()) {
+      show("err", "邮箱格式不正确", "请检查邮箱地址，例如 name@example.com。");
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = "AI 正在生成回复，请稍候…";
+    show("ok", "已提交", "AI 通常需要 10–60 秒生成回复，请不要关闭页面。");
+
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 120000); // 120 秒超时
+
+    try {
+      const res = await fetch(WEBHOOK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        signal: ctrl.signal
+      });
+      clearTimeout(timer);
+      if (!res.ok) throw new Error("服务器返回状态 " + res.status);
+
+      // 如果 n8n 的 "Respond to Webhook" 节点返回了答复，则显示出来
+      let reply = "";
+      const raw = await res.text();
+      try {
+        const j = JSON.parse(raw);
+        reply = j.answer || j.output || j.reply || j.message || j.text || "";
+      } catch { reply = raw && raw.length < 2000 ? raw : ""; }
+
+      show("ok", "提交成功", reply || "我们已收到你的问题，回复将发送到 " + data.email + "。");
+      form.reset();
+      document.getElementById("n").textContent = "0";
+    } catch (err) {
+      clearTimeout(timer);
+      const msg = err.name === "AbortError" ? "等待回复超时（120 秒）。" : err.message;
+      show("err", "提交失败", "请稍后重试，或检查网络与 Webhook 地址。（" + msg + "）");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "提交问题";
+    }
+  });
+</script>
+</body>
+</html>
